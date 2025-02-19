@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Villa Allende Golf</title>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #166534;
+            font-family: Arial, sans-serif;
+        }
+        #menu, #gameOver, #levelTransition {
+            text-align: center;
+            color: white;
+        }
+        #menu h1 {
+            font-size: 2.5rem;
+            margin-bottom: 2rem;
+        }
+        #startButton, #playAgainButton {
+            font-size: 1.5rem;
+            padding: 1rem 2rem;
+            background-color: #16a34a;
+            border: none;
+            color: white;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        #startButton:hover, #playAgainButton:hover {
+            background-color: #15803d;
+        }
+        #game, #gameOver, #levelTransition {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+            position: absolute;
+        }
+        #levelTransition {
+            z-index: 10;
+            animation: fadeInOut 2s ease-in-out;
+        }
+        @keyframes fadeInOut {
+            0% {
+                opacity: 0;
+                transform: scale(0.8);
+            }
+            20% {
+                opacity: 1;
+                transform: scale(1.1);
+            }
+            80% {
+                opacity: 1;
+                transform: scale(1.1);
+            }
+            100% {
+                opacity: 0;
+                transform: scale(0.8);
+            }
+        }
+        #stats {
+            color: white;
+            font-size: 1.25rem;
+            font-weight: bold;
+        }
+        #gameCanvas {
+            background-color: #16a34a;
+            border-radius: 0.5rem;
+            cursor: pointer;
+        }
+        #finalStats {
+            background-color: #15803d;
+            padding: 2rem;
+            border-radius: 1rem;
+            margin-top: 1rem;
+        }
+        .level-text {
+            font-size: 3rem;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+    </style>
+</head>
+<body>
+    <div id="menu">
+        <h1>Bienvenido a Villa Allende</h1>
+        <button id="startButton">Jugar</button>
+    </div>
+    
+    <div id="levelTransition">
+        <div class="level-text">Nivel <span id="nextLevelNumber"></span></div>
+    </div>
+
+    <div id="gameOver">
+        <h2>¡Juego Completado!</h2>
+        <div id="finalStats"></div>
+        <button id="playAgainButton" style="margin-top: 2rem;">Jugar de nuevo</button>
+    </div>
+
+    <div id="game">
+        <div id="stats">Nivel: 1 | Golpes: 0</div>
+        <canvas id="gameCanvas" width="500" height="500"></canvas>
+    </div>
+
+    <script>
+        const menu = document.getElementById('menu');
+        const game = document.getElementById('game');
+        const gameOver = document.getElementById('gameOver');
+        const levelTransition = document.getElementById('levelTransition');
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const stats = document.getElementById('stats');
+
+        let gameState = 'menu';
+        let ball = { x: 100, y: 450 };
+        let hole = { x: 0, y: 0 };
+        let velocity = { x: 0, y: 0 };
+        let isDragging = false;
+        let dragStart = { x: 0, y: 0 };
+        let level = 1;
+        let strokes = 0;
+        let strokesPerLevel = Array(10).fill(0);
+        let animationId = null;
+        const TOTAL_LEVELS = 10;
+
+        function showLevelTransition(nextLevel) {
+            document.getElementById('nextLevelNumber').textContent = nextLevel;
+            levelTransition.style.display = 'flex';
+            game.style.opacity = '0.5';
+            
+            setTimeout(() => {
+                levelTransition.style.display = 'none';
+                game.style.opacity = '1';
+            }, 2000);
+        }
+
+        function showGameOver() {
+            game.style.display = 'none';
+            gameOver.style.display = 'flex';
+            
+            let statsHTML = '<div style="text-align: left;">';
+            statsHTML += '<h3 style="margin-top: 0;">Estadísticas finales:</h3>';
+            for (let i = 0; i < TOTAL_LEVELS; i++) {
+                statsHTML += `<div>Nivel ${i + 1}: ${strokesPerLevel[i]} golpes</div>`;
+            }
+            statsHTML += `<div style="margin-top: 1rem; font-weight: bold;">Total de golpes: ${strokes}</div>`;
+            statsHTML += '</div>';
+            
+            document.getElementById('finalStats').innerHTML = statsHTML;
+        }
+
+        function resetGame() {
+            level = 1;
+            strokes = 0;
+            strokesPerLevel = Array(10).fill(0);
+            createNewLevel();
+        }
+
+        function createNewLevel() {
+            hole = {
+                x: Math.random() * 400 + 50,
+                y: Math.random() * 300 + 50
+            };
+            ball = { x: 100, y: 450 };
+            velocity = { x: 0, y: 0 };
+            updateStats();
+            drawGame();
+            startGameLoop();
+        }
+
+        function updateStats() {
+            stats.textContent = `Nivel: ${level} | Golpes: ${strokes}`;
+        }
+
+        function drawGame() {
+            ctx.clearRect(0, 0, 500, 500);
+            
+            ctx.beginPath();
+            ctx.arc(hole.x, hole.y, 15, 0, Math.PI * 2);
+            ctx.fillStyle = 'black';
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, 10, 0, Math.PI * 2);
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = 'black';
+            ctx.fill();
+            ctx.stroke();
+        }
+
+        function update() {
+            if (gameState !== 'playing') return;
+
+            const newX = ball.x + velocity.x;
+            const newY = ball.y + velocity.y;
+            
+            if (Math.hypot(newX - hole.x, newY - hole.y) < 20) {
+                strokesPerLevel[level - 1] = strokes - (level > 1 ? strokesPerLevel.slice(0, level - 1).reduce((a, b) => a + b, 0) : 0);
+                
+                if (level === TOTAL_LEVELS) {
+                    cancelAnimationFrame(animationId);
+                    showGameOver();
+                    return;
+                }
+                
+                level++;
+                showLevelTransition(level);
+                setTimeout(createNewLevel, 2000);
+                return;
+            }
+
+            velocity.x *= 0.98;
+            velocity.y *= 0.98;
+
+            if (newX < 0 || newX > 500) {
+                velocity.x *= -0.8;
+            } else {
+                ball.x = newX;
+            }
+
+            if (newY < 0 || newY > 500) {
+                velocity.y *= -0.8;
+            } else {
+                ball.y = newY;
+            }
+
+            drawGame();
+            animationId = requestAnimationFrame(update);
+        }
+
+        function startGameLoop() {
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+            }
+            animationId = requestAnimationFrame(update);
+        }
+
+        document.getElementById('startButton').addEventListener('click', () => {
+            gameState = 'playing';
+            menu.style.display = 'none';
+            game.style.display = 'flex';
+            resetGame();
+        });
+
+        document.getElementById('playAgainButton').addEventListener('click', () => {
+            gameState = 'playing';
+            gameOver.style.display = 'none';
+            game.style.display = 'flex';
+            resetGame();
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            if (Math.hypot(x - ball.x, y - ball.y) < 30) {
+                isDragging = true;
+                dragStart = { x, y };
+            }
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            drawGame();
+            
+            ctx.beginPath();
+            ctx.moveTo(ball.x, ball.y);
+            ctx.lineTo(x, y);
+            ctx.strokeStyle = 'rgba(255,0,0,0.5)';
+            ctx.stroke();
+        });
+
+        canvas.addEventListener('mouseup', (e) => {
+            if (!isDragging) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            velocity = {
+                x: (dragStart.x - x) * 0.1,
+                y: (dragStart.y - y) * 0.1
+            };
+            
+            strokes++;
+            updateStats();
+            isDragging = false;
+            startGameLoop();
+        });
+    </script>
+</body>
+</html>
